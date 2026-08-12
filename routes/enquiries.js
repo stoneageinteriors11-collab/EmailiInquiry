@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../database/db");
-const { sendEmail } = require("../services/email");
+const { sendEnquiryReply } = require("../services/email");
 
 const STATUSES = ["NEW", "CONTACTED", "QUOTATION_SENT", "FOLLOW_UP", "WON", "LOST"];
 
@@ -174,16 +174,7 @@ router.post("/:id/notes", async (req, res) => {
 // It will call the transactional email provider and store an OUTBOUND message.
 // See services/email.js for the interface.
 router.post("/:id/reply", async (req, res) => {
-  const enquiryId = req.params.id;
-
-  const subject = String(req.body.subject || "").trim();
   const body = String(req.body.body || "").trim();
-
-  if (!subject) {
-    return res.status(400).json({
-      error: "Subject is required."
-    });
-  }
 
   if (!body) {
     return res.status(400).json({
@@ -191,29 +182,15 @@ router.post("/:id/reply", async (req, res) => {
     });
   }
 
-  if (body.length > 20000) {
-    return res.status(400).json({
-      error: "Reply is too long."
-    });
-  }
-
   try {
-    /*
-     * Load enquiry
-     */
+    // Get enquiry
     const enquiryResult = await pool.query(
       `
-      SELECT
-        id,
-        reference,
-        name,
-        email,
-        company,
-        status
+      SELECT *
       FROM enquiries
       WHERE id = $1
       `,
-      [enquiryId]
+      [req.params.id]
     );
 
     if (!enquiryResult.rowCount) {
@@ -224,19 +201,23 @@ router.post("/:id/reply", async (req, res) => {
 
     const enquiry = enquiryResult.rows[0];
 
-    /*
-     * Send email
-     */
-    const emailResult = await sendEmail({
+    if (!enquiry.email) {
+      return res.status(400).json({
+        error: "This enquiry does not have a customer email address."
+      });
+    }
+
+    const subject = `Re: Your enquiry ${enquiry.reference}`;
+
+    // Send email
+    const emailResult = await sendEnquiryReply({
       to: enquiry.email,
       subject,
-      text: body,
-      replyTo: process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM
+      body,
+      reference: enquiry.reference
     });
 
-    /*
-     * Store outbound message
-     */
+    // Store outbound message
     const messageResult = await pool.query(
       `
       INSERT INTO messages
@@ -263,55 +244,36 @@ router.post("/:id/reply", async (req, res) => {
       `,
       [
         enquiry.id,
-        process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM,
+        process.env.EMAIL_FROM,
         enquiry.email,
         subject,
         body,
-        emailResult.messageId || null
+        emailResult?.id || null
       ]
     );
 
-    /*
-     * If this was a NEW enquiry,
-     * automatically mark it as CONTACTED.
-     */
-    if (enquiry.status === "NEW") {
-      await pool.query(
-        `
-        UPDATE enquiries
-        SET
-          status = 'CONTACTED',
-          updated_at = NOW()
-        WHERE id = $1
-        `,
-        [enquiry.id]
-      );
-    } else {
-      await pool.query(
-        `
-        UPDATE enquiries
-        SET updated_at = NOW()
-        WHERE id = $1
-        `,
-        [enquiry.id]
-      );
-    }
+    // Update enquiry
+    await pool.query(
+      `
+      UPDATE enquiries
+      SET
+        status = CASE
+          WHEN status = 'NEW' THEN 'CONTACTED'
+          ELSE status
+        END,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [enquiry.id]
+    );
 
     return res.status(201).json({
       success: true,
-      message: messageResult.rows[0],
-      enquiry: {
-        id: enquiry.id,
-        status: enquiry.status === "NEW"
-          ? "CONTACTED"
-          : enquiry.status
-      }
+      message: messageResult.rows[0]
     });
 
   } catch (error) {
-    console.error("Reply sending failed:");
-    console.error("Message:", error.message);
-    console.error("Stack:", error.stack);
+    console.error("Reply failed:", error);
 
     return res.status(500).json({
       error: "Unable to send reply."

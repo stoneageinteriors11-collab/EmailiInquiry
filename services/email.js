@@ -1,75 +1,60 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD
-  },
-
-  connectionTimeout: 30000,
-  greetingTimeout: 30000,
-  socketTimeout: 30000
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 console.log("Email service ready.");
-console.log("SMTP host:", "smtp.gmail.com");
-console.log("SMTP port:", 587);
-console.log("SMTP user:", process.env.SMTP_USER);
+console.log("Email provider: Resend");
+console.log("Email from:", process.env.EMAIL_FROM);
 
-async function verifyEmailConnection() {
-  try {
-    await transporter.verify();
-
-    console.log("Email service connection successful.");
-
-    return true;
-  } catch (error) {
-    console.error("Email service connection failed:");
-    console.error("Code:", error.code);
-    console.error("Command:", error.command);
-    console.error("Response:", error.response);
-    console.error("Message:", error.message);
-
-    return false;
-  }
-}
-
-async function sendEmail({
+async function sendEnquiryReply({
   to,
   subject,
-  text,
-  html,
-  replyTo
+  body,
+  reference
 }) {
-  const mailOptions = {
-    from: process.env.EMAIL_FROM,
-    to,
-    subject,
-    text,
-    html
-  };
-
-  if (replyTo) {
-    mailOptions.replyTo = replyTo;
+  if (!to) {
+    throw new Error("Recipient email is required.");
   }
 
-  const info = await transporter.sendMail(mailOptions);
+  if (!subject) {
+    throw new Error("Email subject is required.");
+  }
 
-  console.log("Email sent:", {
-    messageId: info.messageId,
-    to,
-    subject
+  if (!body) {
+    throw new Error("Email body is required.");
+  }
+
+  const result = await resend.emails.send({
+    from: process.env.EMAIL_FROM,
+    to: [to],
+
+    // IMPORTANT:
+    // Customer receives the email,
+    // and clicking Reply replies directly to the customer.
+    replyTo: to,
+
+    subject,
+
+    text: body,
+
+    html: body
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>")
   });
 
-  return info;
+  if (result.error) {
+    console.error("Resend email failed:", result.error);
+    throw new Error(result.error.message || "Unable to send email.");
+  }
+
+  console.log("Email sent successfully.");
+  console.log("Resend ID:", result.data?.id);
+
+  return result.data;
 }
 
 module.exports = {
-  transporter,
-  verifyEmailConnection,
-  sendEmail
+  sendEnquiryReply
 };
