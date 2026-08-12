@@ -50,6 +50,7 @@ const shopify = shopifyApp({
   webhooks: {
     path: "/api/webhooks"
   }
+  
 });
 
 const app = express();
@@ -104,7 +105,73 @@ app.get(
   shopify.auth.callback(),
   shopify.redirectToShopifyOrAppRoot()
 );
+// Shopify may redirect here when the embedded app
+// needs to leave the iframe to perform authentication.
 
+app.get("/exitiframe", (req, res) => {
+  const exitIframe = req.query.exitIframe;
+
+  if (!exitIframe) {
+    return res.status(400).send(
+      "Missing exitIframe parameter."
+    );
+  }
+
+  let redirectUrl;
+
+  try {
+    redirectUrl = decodeURIComponent(
+      String(exitIframe)
+    );
+  } catch (error) {
+    return res.status(400).send(
+      "Invalid exitIframe parameter."
+    );
+  }
+
+  // Only allow redirects to Shopify/admin or this app.
+  // This prevents the route becoming an open redirect.
+
+  let parsed;
+
+  try {
+    parsed = new URL(redirectUrl);
+  } catch {
+    return res.status(400).send(
+      "Invalid redirect URL."
+    );
+  }
+
+  const allowed =
+    parsed.hostname === "admin.shopify.com" ||
+    parsed.hostname.endsWith(".myshopify.com") ||
+    parsed.hostname ===
+      new URL(process.env.HOST).hostname;
+
+  if (!allowed) {
+    return res.status(400).send(
+      "Redirect destination not allowed."
+    );
+  }
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Redirecting...</title>
+      </head>
+
+      <body>
+        <script>
+          window.top.location.href =
+            ${JSON.stringify(redirectUrl)};
+        </script>
+      </body>
+    </html>
+  `);
+});
 /*
 |--------------------------------------------------------------------------
 | Shopify Webhooks
