@@ -102,84 +102,92 @@ router.post("/submit", async (req, res) => {
   /*
    * Honeypot
    */
- const body = req.body || {};
+const body = req.body || {};
+
+console.log("Body:", body);
 
 if (clean(body.website, 200)) {
-    return res.status(400).json({
-      error: "Invalid submission."
-    });
-  }
+  return res.status(400).json({
+    error: "Invalid submission."
+  });
+}
 
-  const name = clean(
-    body["contact[name]"],
-    255
-  );
+const contact = body.contact || {};
 
-  const company = clean(
-    body["contact[company]"],
-    255
-  );
+const name = clean(contact.name, 255);
 
-  const email = clean(
-    body["contact[email]"],
-    320
-  ).toLowerCase();
+const company = clean(
+  contact.company,
+  255
+);
 
-  const phone = clean(
-    body["contact[phone]"],
-    100
-  );
+const email = clean(
+  contact.email,
+  320
+).toLowerCase();
 
-  const country = clean(
-    body["contact[country]"],
-    100
-  );
+const phone = clean(
+  contact.phone,
+  100
+);
 
-  const profession = clean(
-    body["contact[profession]"],
-    150
-  );
+const country = clean(
+  contact.country,
+  100
+);
 
-  const howDiscovered = clean(
-    body["contact[how_discovered]"],
-    150
-  );
+const profession = clean(
+  contact.profession,
+  150
+);
 
-  const interestedIn = clean(
-    body["contact[interested_in]"],
-    1000
-  );
+const howDiscovered = clean(
+  contact.how_discovered,
+  150
+);
 
-  const projectDetails = clean(
-    body["contact[body]"],
-    10000
-  );
+const interestedIn = clean(
+  contact.interested_in,
+  1000
+);
 
-  const shop = clean(
-    req.query.shop,
-    255
-  );
+const projectDetails = clean(
+  contact.body,
+  10000
+);
 
-  /*
-   * Required fields
-   */
-  if (!name || !email) {
-    return res.status(400).json({
-      error: "Name and email are required."
-    });
-  }
+const shop = clean(
+  req.query.shop,
+  255
+);
 
-  /*
-   * Email validation
-   */
-  if (
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  ) {
-    return res.status(400).json({
-      error: "Please enter a valid email address."
-    });
-  }
+console.log("Parsed enquiry:");
+console.log({
+  name,
+  company,
+  email,
+  phone,
+  country,
+  profession,
+  howDiscovered,
+  interestedIn,
+  projectDetails,
+  shop
+});
 
+if (!name || !email) {
+  return res.status(400).json({
+    error: "Name and email are required."
+  });
+}
+
+if (
+  !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+) {
+  return res.status(400).json({
+    error: "Please enter a valid email address."
+  });
+}
   try {
     /*
      * Generate unique reference
