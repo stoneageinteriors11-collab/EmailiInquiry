@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="shopify-api-key" content="%SHOPIFY_API_KEY%">
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  <title>Stoneage Enquiries</title>
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">STONEAGE INTERIORS</div>
+        <h1>Enquiries</h1>
+      </div>
+      <button class="refresh" id="refresh">Refresh</button>
+    </header>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="toolbar">
+      <input id="search" placeholder="Search name, company, email or reference">
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="NEW">New</option>
+        <option value="CONTACTED">Contacted</option>
+        <option value="QUOTATION_SENT">Quotation Sent</option>
+        <option value="FOLLOW_UP">Follow-up</option>
+        <option value="WON">Won</option>
+        <option value="LOST">Lost</option>
+      </select>
+    </section>
+
+    <section class="content">
+      <div class="list" id="list"></div>
+      <div class="detail" id="detail">
+        <div class="empty">Select an enquiry to view its details.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>

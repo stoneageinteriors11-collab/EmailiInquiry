@@ -1,0 +1,30 @@
+name = "stoneage-enquiry-manager"
+
+client_id = "c6c1f0808f6cdf81dfd4735470dec171"
+
+application_url = "http://localhost:3000"
+
+embedded = true
+
+[access_scopes]
+scopes = "read_customers,write_app_proxy"
+
+[auth]
+redirect_urls = [
+  "http://localhost:3000/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2026-07"
+
+[access.admin]
+embedded_app_direct_api_access = true
+direct_api_mode = "online"
+
+[app_proxy]
+url = "/proxy"
+prefix = "apps"
+subpath = "enquiries"
+
+[build]
+automatically_update_urls_on_dev = true
