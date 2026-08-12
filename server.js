@@ -12,7 +12,7 @@ const { ApiVersion } = require("@shopify/shopify-api");
 const {
   PostgreSQLSessionStorage
 } = require("@shopify/shopify-app-session-storage-postgresql");
-
+const { verifyEmailConnection } = require("./services/email");
 const { pool, initDatabase } = require("./database/db");
 
 const enquiryRoutes = require("./routes/enquiries");
@@ -366,7 +366,14 @@ app.get(
 
   }
 );
-
+verifyEmailConnection()
+  .then(() => {
+    console.log("Email service ready.");
+  })
+  .catch((error) => {
+    console.error("Email service connection failed:");
+    console.error(error.message);
+  });
 
 /*
 |--------------------------------------------------------------------------

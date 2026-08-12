@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../database/db");
+const { sendEmail } = require("../services/email");
 
 const STATUSES = ["NEW", "CONTACTED", "QUOTATION_SENT", "FOLLOW_UP", "WON", "LOST"];
 
@@ -172,10 +173,150 @@ router.post("/:id/notes", async (req, res) => {
 // Reply endpoint is intentionally left as a V2 feature.
 // It will call the transactional email provider and store an OUTBOUND message.
 // See services/email.js for the interface.
-router.post("/:id/reply", async (_req, res) => {
-  res.status(501).json({
-    error: "Reply sending is V2. The enquiry database and admin UI are ready first."
-  });
+router.post("/:id/reply", async (req, res) => {
+  const enquiryId = req.params.id;
+
+  const subject = String(req.body.subject || "").trim();
+  const body = String(req.body.body || "").trim();
+
+  if (!subject) {
+    return res.status(400).json({
+      error: "Subject is required."
+    });
+  }
+
+  if (!body) {
+    return res.status(400).json({
+      error: "Reply cannot be empty."
+    });
+  }
+
+  if (body.length > 20000) {
+    return res.status(400).json({
+      error: "Reply is too long."
+    });
+  }
+
+  try {
+    /*
+     * Load enquiry
+     */
+    const enquiryResult = await pool.query(
+      `
+      SELECT
+        id,
+        reference,
+        name,
+        email,
+        company,
+        status
+      FROM enquiries
+      WHERE id = $1
+      `,
+      [enquiryId]
+    );
+
+    if (!enquiryResult.rowCount) {
+      return res.status(404).json({
+        error: "Enquiry not found."
+      });
+    }
+
+    const enquiry = enquiryResult.rows[0];
+
+    /*
+     * Send email
+     */
+    const emailResult = await sendEmail({
+      to: enquiry.email,
+      subject,
+      text: body,
+      replyTo: process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM
+    });
+
+    /*
+     * Store outbound message
+     */
+    const messageResult = await pool.query(
+      `
+      INSERT INTO messages
+      (
+        enquiry_id,
+        direction,
+        from_email,
+        to_email,
+        subject,
+        body,
+        provider_message_id
+      )
+      VALUES
+      (
+        $1,
+        'OUTBOUND',
+        $2,
+        $3,
+        $4,
+        $5,
+        $6
+      )
+      RETURNING *
+      `,
+      [
+        enquiry.id,
+        process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM,
+        enquiry.email,
+        subject,
+        body,
+        emailResult.messageId || null
+      ]
+    );
+
+    /*
+     * If this was a NEW enquiry,
+     * automatically mark it as CONTACTED.
+     */
+    if (enquiry.status === "NEW") {
+      await pool.query(
+        `
+        UPDATE enquiries
+        SET
+          status = 'CONTACTED',
+          updated_at = NOW()
+        WHERE id = $1
+        `,
+        [enquiry.id]
+      );
+    } else {
+      await pool.query(
+        `
+        UPDATE enquiries
+        SET updated_at = NOW()
+        WHERE id = $1
+        `,
+        [enquiry.id]
+      );
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: messageResult.rows[0],
+      enquiry: {
+        id: enquiry.id,
+        status: enquiry.status === "NEW"
+          ? "CONTACTED"
+          : enquiry.status
+      }
+    });
+
+  } catch (error) {
+    console.error("Reply sending failed:");
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+
+    return res.status(500).json({
+      error: "Unable to send reply."
+    });
+  }
 });
 
 module.exports = router;
