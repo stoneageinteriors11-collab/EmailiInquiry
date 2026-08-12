@@ -78,6 +78,18 @@ function makeReference() {
 }
 
 router.post("/submit", async (req, res) => {
+
+  console.log("=================================");
+  console.log("APP PROXY ENQUIRY REQUEST");
+  console.log("=================================");
+  console.log("Method:", req.method);
+  console.log("Path:", req.path);
+  console.log("Shop:", req.query.shop);
+  console.log("Timestamp:", req.query.timestamp);
+  console.log("Has signature:", Boolean(req.query.signature));
+  console.log("Content-Type:", req.headers["content-type"]);
+  console.log("Body:", req.body);
+  console.log("=================================");
   /*
    * Verify Shopify App Proxy signature
    */
@@ -90,54 +102,56 @@ router.post("/submit", async (req, res) => {
   /*
    * Honeypot
    */
-  if (clean(req.body.website, 200)) {
+ const body = req.body || {};
+
+if (clean(body.website, 200)) {
     return res.status(400).json({
       error: "Invalid submission."
     });
   }
 
   const name = clean(
-    req.body["contact[name]"],
+    body["contact[name]"],
     255
   );
 
   const company = clean(
-    req.body["contact[company]"],
+    body["contact[company]"],
     255
   );
 
   const email = clean(
-    req.body["contact[email]"],
+    body["contact[email]"],
     320
   ).toLowerCase();
 
   const phone = clean(
-    req.body["contact[phone]"],
+    body["contact[phone]"],
     100
   );
 
   const country = clean(
-    req.body["contact[country]"],
+    body["contact[country]"],
     100
   );
 
   const profession = clean(
-    req.body["contact[profession]"],
+    body["contact[profession]"],
     150
   );
 
   const howDiscovered = clean(
-    req.body["contact[how_discovered]"],
+    body["contact[how_discovered]"],
     150
   );
 
   const interestedIn = clean(
-    req.body["contact[interested_in]"],
+    body["contact[interested_in]"],
     1000
   );
 
   const projectDetails = clean(
-    req.body["contact[body]"],
+    body["contact[body]"],
     10000
   );
 
@@ -279,7 +293,18 @@ router.post("/submit", async (req, res) => {
       "Enquiry submission failed:",
       error
     );
-
+ console.error("=================================");
+    console.error("ENQUIRY SUBMISSION FAILED");
+    console.error("=================================");
+    console.error("Message:", error.message);
+    console.error("Code:", error.code);
+    console.error("Detail:", error.detail);
+    console.error("Hint:", error.hint);
+    console.error("Constraint:", error.constraint);
+    console.error("Table:", error.table);
+    console.error("Column:", error.column);
+    console.error("Stack:", error.stack);
+    console.error("=================================");
     return res.status(500).json({
       error:
         "Unable to submit your enquiry."
