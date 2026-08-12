@@ -440,97 +440,71 @@ function renderDetail(data) {
   /*
    * SEND REPLY
    */
-  document
-    .getElementById("sendReply")
-    .addEventListener("click", async () => {
+  document.getElementById("sendReply").addEventListener("click", async () => {
+  const textarea = document.getElementById("replyBody");
+  const status = document.getElementById("replyStatus");
+  const button = document.getElementById("sendReply");
 
-      const textarea = document.getElementById("replyBody");
-      const button = document.getElementById("sendReply");
-      const status = document.getElementById("replyStatus");
+  const body = textarea.value.trim();
 
-      const body = textarea.value.trim();
+  if (!body) {
+    status.textContent = "Please write a reply first.";
+    return;
+  }
 
-      if (!body) {
-        status.textContent = "Please write a reply first.";
-        status.className = "reply-error";
-        textarea.focus();
-        return;
-      }
+  button.disabled = true;
+  button.textContent = "Sending...";
+  status.textContent = "";
 
-      /*
-       * Prevent double-clicking / duplicate emails
-       */
-      button.disabled = true;
-      button.textContent = "Sending...";
-      status.textContent = "";
-      status.className = "";
-
-
-      try {
-
-        const response = await authFetch(
-          `/api/enquiries/${e.id}/reply`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              body
-            })
-          }
-        );
-
-
-        const result = await response.json().catch(() => ({}));
-
-
-        if (!response.ok) {
-
-          throw new Error(
-            result.error ||
-            "Unable to send reply."
-          );
-
-        }
-
-
-        /*
-         * Success
-         */
-        textarea.value = "";
-
-        status.textContent =
-          "Reply sent successfully.";
-
-        status.className =
-          "reply-success";
-
-
-        /*
-         * Reload conversation so the OUTBOUND
-         * message appears immediately.
-         */
-        await loadEnquiry(e.id);
-
-
-      } catch (error) {
-
-        console.error(
-          "Reply sending error:",
-          error
-        );
-
-        status.textContent =
-          error.message ||
-          "Unable to send reply.";
-
-        status.className =
-          "reply-error";
-
-        button.disabled = false;
-        button.textContent = "Send Reply";
-      }
-
+  try {
+    const response = await authFetch(`/api/enquiries/${e.id}/reply`, {
+      method: "POST",
+      body: JSON.stringify({
+        body
+      })
     });
 
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Unable to send reply."
+      );
+    }
+
+    status.textContent = "Reply sent successfully.";
+
+    textarea.value = "";
+
+    /*
+     * Reload the enquiry so the new
+     * OUTBOUND message appears in conversation
+     */
+    await loadEnquiry(e.id);
+
+    /*
+     * Refresh stats because NEW may
+     * have changed to CONTACTED
+     */
+    await loadStats();
+
+  } catch (error) {
+
+    console.error("Reply error:", error);
+
+    status.textContent =
+      error.message || "Unable to send reply.";
+
+  } finally {
+
+    /*
+     * loadEnquiry() rebuilds the HTML,
+     * so this element may no longer exist.
+     *
+     * Therefore we don't rely on it here.
+     */
+  }
+});
 
   /*
    * ADD INTERNAL NOTE

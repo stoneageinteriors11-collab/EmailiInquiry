@@ -183,7 +183,9 @@ router.post("/:id/reply", async (req, res) => {
   }
 
   try {
-    // Get enquiry
+    /*
+     * Load enquiry
+     */
     const enquiryResult = await pool.query(
       `
       SELECT *
@@ -201,23 +203,34 @@ router.post("/:id/reply", async (req, res) => {
 
     const enquiry = enquiryResult.rows[0];
 
+    /*
+     * Customer email
+     */
     if (!enquiry.email) {
       return res.status(400).json({
-        error: "This enquiry does not have a customer email address."
+        error: "Customer email address is missing."
       });
     }
 
-    const subject = `Re: Your enquiry ${enquiry.reference}`;
+    /*
+     * Subject
+     */
+    const subject =
+      `Re: Your enquiry ${enquiry.reference}`;
 
-    // Send email
+    /*
+     * Send email
+     */
     const emailResult = await sendEnquiryReply({
       to: enquiry.email,
       subject,
       body,
-      reference: enquiry.reference
+      enquiryReference: enquiry.reference
     });
 
-    // Store outbound message
+    /*
+     * Store outbound message
+     */
     const messageResult = await pool.query(
       `
       INSERT INTO messages
@@ -252,28 +265,48 @@ router.post("/:id/reply", async (req, res) => {
       ]
     );
 
-    // Update enquiry
-    await pool.query(
-      `
-      UPDATE enquiries
-      SET
-        status = CASE
-          WHEN status = 'NEW' THEN 'CONTACTED'
-          ELSE status
-        END,
-        updated_at = NOW()
-      WHERE id = $1
-      `,
-      [enquiry.id]
-    );
+    /*
+     * Automatically move NEW enquiry to CONTACTED
+     */
+    if (enquiry.status === "NEW") {
+      await pool.query(
+        `
+        UPDATE enquiries
+        SET
+          status = 'CONTACTED',
+          updated_at = NOW()
+        WHERE id = $1
+        `,
+        [enquiry.id]
+      );
+    } else {
+      await pool.query(
+        `
+        UPDATE enquiries
+        SET updated_at = NOW()
+        WHERE id = $1
+        `,
+        [enquiry.id]
+      );
+    }
 
+    /*
+     * Success
+     */
     return res.status(201).json({
       success: true,
       message: messageResult.rows[0]
     });
 
   } catch (error) {
-    console.error("Reply failed:", error);
+
+    console.error("=================================");
+    console.error("REPLY FAILED");
+    console.error("=================================");
+    console.error(error);
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+    console.error("=================================");
 
     return res.status(500).json({
       error: "Unable to send reply."
