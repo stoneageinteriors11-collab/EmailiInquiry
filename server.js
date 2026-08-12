@@ -47,20 +47,20 @@ if (
 
 const shopify = shopifyApp({
   api: {
-    apiKey: process.env.SHOPIFY_API_KEY,
+  apiKey: process.env.SHOPIFY_API_KEY,
+  apiSecretKey: process.env.SHOPIFY_API_SECRET,
 
-    apiSecretKey:
-      process.env.SHOPIFY_API_SECRET,
+  scopes: process.env.SCOPES
+    ?.split(",")
+    .map(scope => scope.trim())
+    .filter(Boolean) || [],
 
-    scopes:
-      process.env.SCOPES?.split(",").map(s => s.trim()) || [],
+  hostScheme: "https",
 
-    hostName:
-      process.env.HOST?.replace(/^https?:\/\//, ""),
+  hostName: "emailiinquiry.onrender.com",
 
-    apiVersion:
-      ApiVersion.July26,
-  },
+  apiVersion: ApiVersion.July26,
+},
 
   auth: {
     path: "/api/auth",
