@@ -2,7 +2,7 @@ name = "stoneage-enquiry-manager"
 
 client_id = "c6c1f0808f6cdf81dfd4735470dec171"
 
-application_url = "http://localhost:3000"
+application_url = "https://emailiinquiry.onrender.com"
 
 embedded = true
 
@@ -11,7 +11,7 @@ scopes = "read_customers,write_app_proxy"
 
 [auth]
 redirect_urls = [
-  "http://localhost:3000/api/auth/callback"
+  "https://emailiinquiry.onrender.com/api/auth/callback"
 ]
 
 [webhooks]
@@ -27,4 +27,4 @@ prefix = "apps"
 subpath = "enquiries"
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false

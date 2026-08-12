@@ -20,8 +20,8 @@ function timingSafeEqualHex(a, b) {
 
 function verifyAppProxy(req) {
   const signature = req.query.signature;
-  const timestamp = Number(req.query.timestamp);
   const shop = req.query.shop;
+  const timestamp = Number(req.query.timestamp);
 
   if (!signature || !shop || !timestamp) {
     return false;
@@ -36,10 +36,16 @@ function verifyAppProxy(req) {
     return false;
   }
 
-  const message = Object.keys(req.query)
+  const params = Object.keys(req.query)
     .filter((key) => key !== "signature")
     .sort()
-    .map((key) => `${key}=${req.query[key]}`)
+    .map((key) => {
+      const value = Array.isArray(req.query[key])
+        ? req.query[key].join(",")
+        : req.query[key];
+
+      return `${key}=${value}`;
+    })
     .join("");
 
   const calculated = crypto
@@ -47,7 +53,7 @@ function verifyAppProxy(req) {
       "sha256",
       process.env.SHOPIFY_API_SECRET
     )
-    .update(message, "utf8")
+    .update(params, "utf8")
     .digest("hex");
 
   return timingSafeEqualHex(
