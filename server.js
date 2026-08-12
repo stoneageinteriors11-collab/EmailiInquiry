@@ -2,7 +2,6 @@ require("dotenv").config();
 
 const path = require("path");
 const fs = require("fs");
-
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -10,12 +9,23 @@ const rateLimit = require("express-rate-limit");
 const { shopifyApp } = require("@shopify/shopify-app-express");
 const { ApiVersion } = require("@shopify/shopify-api");
 
+const {
+  PostgreSQLSessionStorage
+} = require("@shopify/shopify-app-session-storage-postgresql");
+
 const { pool, initDatabase } = require("./database/db");
 
 const enquiryRoutes = require("./routes/enquiries");
 const proxyRoutes = require("./routes/proxy");
 
 const PORT = Number(process.env.PORT || 3000);
+
+
+/*
+|--------------------------------------------------------------------------
+| Environment validation
+|--------------------------------------------------------------------------
+*/
 
 if (
   !process.env.SHOPIFY_API_KEY ||
@@ -28,34 +38,63 @@ if (
   );
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| Shopify
+|--------------------------------------------------------------------------
+*/
+
 const shopify = shopifyApp({
   api: {
     apiKey: process.env.SHOPIFY_API_KEY,
-    apiSecretKey: process.env.SHOPIFY_API_SECRET,
 
-    scopes: process.env.SCOPES
-      ? process.env.SCOPES.split(",").map((scope) => scope.trim())
-      : [],
+    apiSecretKey:
+      process.env.SHOPIFY_API_SECRET,
 
-    hostName: process.env.HOST.replace(/^https?:\/\//, ""),
+    scopes:
+      process.env.SCOPES?.split(",").map(s => s.trim()) || [],
 
-    apiVersion: ApiVersion.July26
+    hostName:
+      process.env.HOST?.replace(/^https?:\/\//, ""),
+
+    apiVersion:
+      ApiVersion.July26,
   },
 
   auth: {
     path: "/api/auth",
-    callbackPath: "/api/auth/callback"
+
+    callbackPath:
+      "/api/auth/callback",
   },
 
   webhooks: {
-    path: "/api/webhooks"
-  }
-  
+    path: "/api/webhooks",
+  },
+
+  sessionStorage:
+    new PostgreSQLSessionStorage(
+      process.env.DATABASE_URL
+    ),
+
+  isEmbeddedApp: true,
+
+  exitIframePath:
+    "/exitiframe",
 });
+
+
+/*
+|--------------------------------------------------------------------------
+| Express
+|--------------------------------------------------------------------------
+*/
 
 const app = express();
 
 app.set("trust proxy", 1);
+
 
 /*
 |--------------------------------------------------------------------------
@@ -66,9 +105,10 @@ app.set("trust proxy", 1);
 app.use(
   helmet({
     contentSecurityPolicy: false,
-    frameguard: false
+    frameguard: false,
   })
 );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -79,15 +119,16 @@ app.use(
 app.use(
   express.urlencoded({
     extended: true,
-    limit: "100kb"
+    limit: "100kb",
   })
 );
 
 app.use(
   express.json({
-    limit: "100kb"
+    limit: "100kb",
   })
 );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -105,73 +146,70 @@ app.get(
   shopify.auth.callback(),
   shopify.redirectToShopifyOrAppRoot()
 );
-// Shopify may redirect here when the embedded app
-// needs to leave the iframe to perform authentication.
+
+
+/*
+|--------------------------------------------------------------------------
+| Exit iframe
+|--------------------------------------------------------------------------
+*/
 
 app.get("/exitiframe", (req, res) => {
-  const exitIframe = req.query.exitIframe;
 
-  if (!exitIframe) {
+  const shop = req.query.shop;
+  const host = req.query.host;
+
+  if (!shop || !host) {
     return res.status(400).send(
-      "Missing exitIframe parameter."
+      "Missing shop or host."
     );
   }
 
-  let redirectUrl;
+  const authUrl =
+    `/api/auth` +
+    `?shop=${encodeURIComponent(shop)}` +
+    `&host=${encodeURIComponent(host)}`;
 
-  try {
-    redirectUrl = decodeURIComponent(
-      String(exitIframe)
-    );
-  } catch (error) {
-    return res.status(400).send(
-      "Invalid exitIframe parameter."
-    );
-  }
+  res.type("html").send(`
+<!DOCTYPE html>
 
-  // Only allow redirects to Shopify/admin or this app.
-  // This prevents the route becoming an open redirect.
+<html>
 
-  let parsed;
+<head>
 
-  try {
-    parsed = new URL(redirectUrl);
-  } catch {
-    return res.status(400).send(
-      "Invalid redirect URL."
-    );
-  }
+<meta charset="UTF-8">
 
-  const allowed =
-    parsed.hostname === "admin.shopify.com" ||
-    parsed.hostname.endsWith(".myshopify.com") ||
-    parsed.hostname ===
-      new URL(process.env.HOST).hostname;
+<title>Redirecting...</title>
 
-  if (!allowed) {
-    return res.status(400).send(
-      "Redirect destination not allowed."
-    );
-  }
+<meta
+  name="shopify-api-key"
+  content="${process.env.SHOPIFY_API_KEY}"
+>
 
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Redirecting...</title>
-      </head>
+<script
+  src="https://cdn.shopify.com/shopifycloud/app-bridge.js">
+</script>
 
-      <body>
-        <script>
-          window.top.location.href =
-            ${JSON.stringify(redirectUrl)};
-        </script>
-      </body>
-    </html>
+</head>
+
+<body>
+
+<p>Redirecting...</p>
+
+<script>
+
+window.top.location.href =
+  ${JSON.stringify(authUrl)};
+
+</script>
+
+</body>
+
+</html>
   `);
 });
+
+
 /*
 |--------------------------------------------------------------------------
 | Shopify Webhooks
@@ -180,37 +218,44 @@ app.get("/exitiframe", (req, res) => {
 
 app.post(
   shopify.config.webhooks.path,
+
+  express.text({
+    type: "*/*"
+  }),
+
   shopify.processWebhooks({
     webhookHandlers: {}
   })
 );
 
+
 /*
 |--------------------------------------------------------------------------
 | Storefront App Proxy
 |--------------------------------------------------------------------------
-|
-| Shopify:
-|
-| /apps/enquiry/submit
-|
-| forwards to:
-|
-| /proxy/submit
-|
 */
 
-const submitLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  limit: 30,
+const submitLimiter =
+  rateLimit({
 
-  standardHeaders: true,
-  legacyHeaders: false,
+    windowMs:
+      10 * 60 * 1000,
 
-  message: {
-    error: "Too many submissions. Please try again later."
-  }
-});
+    limit: 30,
+
+    standardHeaders:
+      true,
+
+    legacyHeaders:
+      false,
+
+    message: {
+      error:
+        "Too many submissions. Please try again later."
+    }
+
+  });
+
 
 app.use(
   "/proxy",
@@ -218,17 +263,21 @@ app.use(
   proxyRoutes
 );
 
+
 /*
 |--------------------------------------------------------------------------
-| Admin API
+| Admin enquiry API
 |--------------------------------------------------------------------------
 */
 
 app.use(
   "/api/enquiries",
+
   shopify.validateAuthenticatedSession(),
+
   enquiryRoutes
 );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -236,11 +285,14 @@ app.use(
 |--------------------------------------------------------------------------
 */
 
-app.use(shopify.cspHeaders());
+app.use(
+  shopify.cspHeaders()
+);
+
 
 /*
 |--------------------------------------------------------------------------
-| Admin frontend
+| Static files
 |--------------------------------------------------------------------------
 */
 
@@ -250,6 +302,7 @@ app.use(
   )
 );
 
+
 /*
 |--------------------------------------------------------------------------
 | Admin app
@@ -258,11 +311,18 @@ app.use(
 
 app.get(
   "/",
+
   shopify.ensureInstalledOnShop(),
+
   (req, res) => {
-    const html = fs
-      .readFileSync(
-        path.join(__dirname, "public", "admin.html"),
+
+    const html =
+      fs.readFileSync(
+        path.join(
+          __dirname,
+          "public",
+          "admin.html"
+        ),
         "utf8"
       )
       .replaceAll(
@@ -270,9 +330,12 @@ app.get(
         process.env.SHOPIFY_API_KEY || ""
       );
 
-    res.type("html").send(html);
+    res
+      .type("html")
+      .send(html);
   }
 );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -280,35 +343,30 @@ app.get(
 |--------------------------------------------------------------------------
 */
 
-app.get("/health", async (req, res) => {
-  try {
-    await pool.query("SELECT 1");
+app.get(
+  "/health",
 
-    res.json({
-      ok: true,
-      service: "stoneage-enquiry-app"
-    });
-  } catch (error) {
-    console.error("Health check failed:", error);
+  async (_req, res) => {
 
-    res.status(503).json({
-      ok: false
-    });
+    try {
+
+      await pool.query("SELECT 1");
+
+      res.json({
+        ok: true
+      });
+
+    } catch {
+
+      res.status(503).json({
+        ok: false
+      });
+
+    }
+
   }
-});
+);
 
-/*
-|--------------------------------------------------------------------------
-| 404 handler
-|--------------------------------------------------------------------------
-*/
-
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Route not found",
-    path: req.originalUrl
-  });
-});
 
 /*
 |--------------------------------------------------------------------------
@@ -317,15 +375,22 @@ app.use((req, res) => {
 */
 
 (async () => {
+
   try {
+
     await initDatabase();
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(
-        `Stoneage Enquiry Manager running on port ${PORT}`
-      );
-    });
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `Stoneage Enquiry Manager running on port ${PORT}`
+        );
+      }
+    );
+
   } catch (error) {
+
     console.error(
       "Startup failed:",
       error
@@ -333,4 +398,5 @@ app.use((req, res) => {
 
     process.exit(1);
   }
+
 })();
