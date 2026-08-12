@@ -3,12 +3,27 @@ const nodemailer = require("nodemailer");
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
+  secure: process.env.SMTP_SECURE === "true",
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASSWORD
-  }
+  },
+  connectionTimeout: 15000,
+  greetingTimeout: 15000,
+  socketTimeout: 15000
 });
+
+async function verifyEmailConnection() {
+  try {
+    await transporter.verify();
+    console.log("Email service connection successful.");
+    return true;
+  } catch (error) {
+    console.error("Email service connection failed:");
+    console.error(error.message);
+    return false;
+  }
+}
 
 async function sendEmail({
   to,
@@ -17,39 +32,31 @@ async function sendEmail({
   html,
   replyTo
 }) {
-  if (!to) {
-    throw new Error("Recipient email address is required.");
-  }
-
-  if (!subject) {
-    throw new Error("Email subject is required.");
-  }
-
-  if (!text && !html) {
-    throw new Error("Email body is required.");
-  }
-
-  const result = await transporter.sendMail({
+  const mailOptions = {
     from: process.env.EMAIL_FROM,
     to,
-    replyTo: replyTo || process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM,
     subject,
     text,
     html
+  };
+
+  if (replyTo) {
+    mailOptions.replyTo = replyTo;
+  }
+
+  const info = await transporter.sendMail(mailOptions);
+
+  console.log("Email sent:", {
+    messageId: info.messageId,
+    to,
+    subject
   });
 
-  return {
-    messageId: result.messageId,
-    response: result.response
-  };
-}
-
-async function verifyEmailConnection() {
-  await transporter.verify();
-  console.log("SMTP connection verified.");
+  return info;
 }
 
 module.exports = {
-  sendEmail,
-  verifyEmailConnection
+  transporter,
+  verifyEmailConnection,
+  sendEmail
 };
