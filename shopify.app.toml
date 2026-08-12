@@ -22,7 +22,7 @@ embedded_app_direct_api_access = true
 direct_api_mode = "online"
 
 [app_proxy]
-url = "/proxy"
+url = "https://emailiinquiry.onrender.com/proxy"
 prefix = "apps"
 subpath = "enquiries"
 
