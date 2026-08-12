@@ -41,7 +41,7 @@ async function sendEnquiryReply({
 
     // When admin/customer clicks reply,
     // the reply goes back to the customer
-    replyTo: to,
+    replyTo: process.env.EMAIL_REPLY_TO,
 
     subject,
 
