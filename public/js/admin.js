@@ -841,7 +841,17 @@ function renderDetail(data) {
           rows="7"
         ></textarea>
 
+ <div class="reply-attachments">
 
+    <input
+      type="file"
+      id="replyAttachments"
+      multiple
+    />
+
+    <div id="selectedFiles" class="selected-files"></div>
+
+  </div>
         <button
           type="button"
           id="sendReply"
@@ -1001,141 +1011,205 @@ function renderDetail(data) {
      SEND REPLY
   ======================================================= */
 
-  document
-    .getElementById(
-      "sendReply"
-    )
-    .addEventListener(
-      "click",
-      async () => {
+ /*
+ * SEND REPLY
+ */
+document
+  .getElementById("sendReply")
+  .addEventListener("click", async () => {
 
-        const textarea =
-          document.getElementById(
-            "replyBody"
-          );
+    const textarea =
+      document.getElementById("replyBody");
 
+    const fileInput =
+      document.getElementById("replyAttachments");
 
-        const status =
-          document.getElementById(
-            "replyStatus"
-          );
+    const status =
+      document.getElementById("replyStatus");
 
-
-        const button =
-          document.getElementById(
-            "sendReply"
-          );
+    const button =
+      document.getElementById("sendReply");
 
 
-        const body =
-          textarea.value.trim();
+    const body =
+      textarea.value.trim();
 
 
-        if (!body) {
+    if (!body && fileInput.files.length === 0) {
 
-          status.textContent =
-            "Please write a reply first.";
+      status.textContent =
+        "Please write a reply or attach a file.";
 
-          return;
-        }
-
-
-        button.disabled = true;
-
-        button.textContent =
-          "Sending...";
-
-        status.textContent = "";
+      return;
+    }
 
 
-        try {
-
-          const response =
-            await authFetch(
-              `/api/enquiries/${e.id}/reply`,
-              {
-                method: "POST",
-
-                body: JSON.stringify({
-                  body
-                })
-              }
-            );
+    button.disabled = true;
+    button.textContent = "Sending...";
+    status.textContent = "";
 
 
-          const result =
-            await response.json();
+    try {
+
+      /*
+       * IMPORTANT:
+       * Use FormData because we are
+       * sending files.
+       */
+
+      const formData = new FormData();
+
+      formData.append("body", body);
 
 
-          if (!response.ok) {
+      /*
+       * Add every selected attachment
+       */
 
-            throw new Error(
-              result.error ||
-              "Unable to send reply."
-            );
+      for (const file of fileInput.files) {
 
-          }
-
-
-          status.textContent =
-            "Reply sent successfully.";
-
-
-          textarea.value = "";
-
-
-          /*
-           * Reload enquiry.
-           *
-           * This makes the new OUTBOUND
-           * message appear immediately.
-           */
-
-          await loadEnquiry(
-            e.id
-          );
-
-
-          /*
-           * Refresh stats.
-           */
-
-          await loadStats();
-
-
-        } catch (error) {
-
-          console.error(
-            "Reply error:",
-            error
-          );
-
-
-          /*
-           * The textarea may still exist
-           * unless loadEnquiry() was successful.
-           */
-
-          const currentStatus =
-            document.getElementById(
-              "replyStatus"
-            );
-
-
-          if (currentStatus) {
-
-            currentStatus.textContent =
-              error.message ||
-              "Unable to send reply.";
-
-          }
-
-        }
+        formData.append(
+          "attachments",
+          file
+        );
 
       }
+
+
+      /*
+       * Get Shopify authentication token
+       */
+
+      const token =
+        await window.shopify.idToken();
+
+
+      const response =
+        await fetch(
+          `/api/enquiries/${e.id}/reply`,
+          {
+            method: "POST",
+
+            headers: {
+              "Authorization":
+                `Bearer ${token}`
+            },
+
+            body: formData
+          }
+        );
+
+
+      const result =
+        await response.json();
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          result.error ||
+          "Unable to send reply."
+        );
+
+      }
+
+
+      status.textContent =
+        "Reply sent successfully.";
+
+
+      /*
+       * Clear reply box
+       */
+
+      textarea.value = "";
+
+      fileInput.value = "";
+
+
+      const selectedFiles =
+        document.getElementById("selectedFiles");
+
+      if (selectedFiles) {
+        selectedFiles.innerHTML = "";
+      }
+
+
+      /*
+       * Reload conversation
+       */
+
+      await loadEnquiry(e.id);
+
+      await loadStats();
+
+
+    } catch (error) {
+
+      console.error(
+        "Reply error:",
+        error
+      );
+
+
+      status.textContent =
+        error.message ||
+        "Unable to send reply.";
+
+
+    } finally {
+
+      /*
+       * The HTML gets rebuilt after
+       * loadEnquiry(), so don't try
+       * to modify the old button here.
+       */
+
+    }
+
+  });
+
+/*
+ * SHOW SELECTED ATTACHMENTS
+ */
+document
+  .getElementById("replyAttachments")
+  .addEventListener("change", (event) => {
+
+    const files = Array.from(
+      event.target.files
     );
 
+    const container =
+      document.getElementById("selectedFiles");
 
+
+    if (!container) {
+      return;
+    }
+
+
+    if (!files.length) {
+
+      container.innerHTML = "";
+
+      return;
+    }
+
+
+    container.innerHTML =
+      files
+        .map(file => `
+          <div class="selected-file">
+            ${escapeHtml(file.name)}
+            <span>
+              ${(file.size / 1024 / 1024).toFixed(2)} MB
+            </span>
+          </div>
+        `)
+        .join("");
+
+  });
   /* =======================================================
      ADD INTERNAL NOTE
   ======================================================= */

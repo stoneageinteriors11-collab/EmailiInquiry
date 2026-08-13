@@ -5,6 +5,17 @@ const { sendEnquiryReply } = require("../services/email");
 
 const STATUSES = ["NEW", "CONTACTED", "QUOTATION_SENT", "FOLLOW_UP", "WON", "LOST"];
 
+const multer = require("multer");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+
+  limits: {
+    files: 5,
+    fileSize: 10 * 1024 * 1024
+  }
+});
+
 router.get("/", async (req, res) => {
   const status = req.query.status;
   const search = String(req.query.search || "").trim();
@@ -173,7 +184,10 @@ router.post("/:id/notes", async (req, res) => {
 // Reply endpoint is intentionally left as a V2 feature.
 // It will call the transactional email provider and store an OUTBOUND message.
 // See services/email.js for the interface.
-router.post("/:id/reply", async (req, res) => {
+router.post(
+  "/:id/reply",
+  upload.array("attachments", 5),
+  async (req, res) => {
   const body = String(req.body.body || "").trim();
 
   if (!body) {
@@ -221,12 +235,13 @@ router.post("/:id/reply", async (req, res) => {
     /*
      * Send email
      */
-    const emailResult = await sendEnquiryReply({
-      to: enquiry.email,
-      subject,
-      body,
-      enquiryReference: enquiry.reference
-    });
+ await sendEnquiryReply({
+  to: enquiry.email,
+  subject,
+  body,
+  enquiryReference: enquiry.reference,
+  attachments: req.files || []
+});
 
     /*
      * Store outbound message

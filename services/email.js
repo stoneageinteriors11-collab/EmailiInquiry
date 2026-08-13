@@ -9,7 +9,8 @@ async function sendEnquiryReply({
   to,
   subject,
   body,
-  enquiryReference
+  enquiryReference,
+  attachments = []
 }) {
   if (!to) {
     throw new Error("Customer email address is missing.");
@@ -44,6 +45,10 @@ async function sendEnquiryReply({
     replyTo: process.env.EMAIL_REPLY_TO,
 
     subject,
+      attachments: attachments.map(file => ({
+    filename: file.originalname,
+    content: file.buffer
+  })),
 
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
