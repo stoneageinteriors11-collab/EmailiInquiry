@@ -17,7 +17,7 @@ const { pool, initDatabase } = require("./database/db");
 
 const enquiryRoutes = require("./routes/enquiries");
 const proxyRoutes = require("./routes/proxy");
-
+const webhooksRouter = require("./routes/webhooks");
 const PORT = Number(process.env.PORT || 3000);
 
 
@@ -109,6 +109,8 @@ app.use(
   })
 );
 
+// webhook
+app.use("/api/webhooks", webhooksRouter);
 
 /*
 |--------------------------------------------------------------------------

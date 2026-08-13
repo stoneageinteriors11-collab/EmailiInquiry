@@ -1,6 +1,7 @@
 const state = {
   enquiries: [],
-  selected: null
+  selected: null,
+  conversationTimer: null
 };
 
 
@@ -65,40 +66,59 @@ function formatDate(value) {
 ========================================================= */
 
 async function loadStats() {
-  const response = await authFetch("/api/enquiries/stats");
+
+  const response = await authFetch(
+    "/api/enquiries/stats"
+  );
 
   const data = await response.json();
 
   if (!response.ok) {
     throw new Error(
-      data.error || "Unable to load enquiry statistics."
+      data.error ||
+      "Unable to load enquiry statistics."
     );
   }
+
 
   document.getElementById("stats").innerHTML =
     Object.entries(data.stats)
       .map(([status, count]) => `
+
         <button
           class="stat"
           data-status="${escapeHtml(status)}"
           type="button"
         >
-          <span>${escapeHtml(statusLabel(status))}</span>
-          <strong>${count}</strong>
+
+          <span>
+            ${escapeHtml(statusLabel(status))}
+          </span>
+
+          <strong>
+            ${count}
+          </strong>
+
         </button>
+
       `)
       .join("");
 
 
-  document.querySelectorAll(".stat").forEach((button) => {
-    button.addEventListener("click", () => {
+  document.querySelectorAll(".stat")
+    .forEach((button) => {
 
-      document.getElementById("statusFilter").value =
-        button.dataset.status;
+      button.addEventListener("click", () => {
 
-      loadEnquiries();
+        document.getElementById(
+          "statusFilter"
+        ).value = button.dataset.status;
+
+        loadEnquiries();
+
+      });
+
     });
-  });
 }
 
 
@@ -107,45 +127,72 @@ async function loadStats() {
 ========================================================= */
 
 async function loadEnquiries() {
+
   const status =
-    document.getElementById("statusFilter").value;
+    document.getElementById(
+      "statusFilter"
+    ).value;
 
   const search =
-    document.getElementById("search").value.trim();
+    document.getElementById(
+      "search"
+    ).value.trim();
 
 
-  const params = new URLSearchParams();
+  const params =
+    new URLSearchParams();
+
 
   if (status) {
-    params.set("status", status);
-  }
-
-  if (search) {
-    params.set("search", search);
-  }
-
-
-  const response = await authFetch(
-    `/api/enquiries?${params.toString()}`
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(
-      data.error || "Unable to load enquiries."
+    params.set(
+      "status",
+      status
     );
   }
 
 
-  state.enquiries = data.enquiries || [];
+  if (search) {
+    params.set(
+      "search",
+      search
+    );
+  }
 
 
-  document.getElementById("list").innerHTML =
+  const response =
+    await authFetch(
+      `/api/enquiries?${params.toString()}`
+    );
+
+
+  const data =
+    await response.json();
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      data.error ||
+      "Unable to load enquiries."
+    );
+
+  }
+
+
+  state.enquiries =
+    data.enquiries || [];
+
+
+  document.getElementById(
+    "list"
+  ).innerHTML =
+
     state.enquiries.length
 
       ? state.enquiries
+
           .map(enquiry => `
+
             <button
               class="enquiry-row ${
                 state.selected?.id === enquiry.id
@@ -159,8 +206,11 @@ async function loadEnquiries() {
               <div class="row-top">
 
                 <strong>
-                  ${escapeHtml(enquiry.reference)}
+                  ${escapeHtml(
+                    enquiry.reference
+                  )}
                 </strong>
+
 
                 <span
                   class="badge badge-${escapeHtml(
@@ -168,21 +218,29 @@ async function loadEnquiries() {
                   )}"
                 >
                   ${escapeHtml(
-                    statusLabel(enquiry.status)
+                    statusLabel(
+                      enquiry.status
+                    )
                   )}
                 </span>
 
               </div>
 
+
               <div class="name">
-                ${escapeHtml(enquiry.name)}
+                ${escapeHtml(
+                  enquiry.name
+                )}
               </div>
+
 
               <div class="company">
                 ${escapeHtml(
-                  enquiry.company || "No company"
+                  enquiry.company ||
+                  "No company"
                 )}
               </div>
+
 
               <div class="interest">
                 ${escapeHtml(
@@ -192,20 +250,32 @@ async function loadEnquiries() {
               </div>
 
             </button>
+
           `)
+
           .join("")
 
-      : `<div class="empty">No enquiries found.</div>`;
+      : `<div class="empty">
+           No enquiries found.
+         </div>`;
 
 
-  document.querySelectorAll(".enquiry-row")
-    .forEach((row) => {
+  document.querySelectorAll(
+    ".enquiry-row"
+  ).forEach((row) => {
 
-      row.addEventListener("click", () => {
-        loadEnquiry(row.dataset.id);
-      });
+    row.addEventListener(
+      "click",
+      () => {
 
-    });
+        loadEnquiry(
+          row.dataset.id
+        );
+
+      }
+    );
+
+  });
 }
 
 
@@ -214,14 +284,19 @@ async function loadEnquiries() {
 ========================================================= */
 
 async function loadEnquiry(id) {
-  const response = await authFetch(
-    `/api/enquiries/${id}`
-  );
 
-  const data = await response.json();
+  const response =
+    await authFetch(
+      `/api/enquiries/${id}`
+    );
+
+
+  const data =
+    await response.json();
 
 
   if (!response.ok) {
+
     alert(
       data.error ||
       "Unable to load enquiry."
@@ -231,11 +306,221 @@ async function loadEnquiry(id) {
   }
 
 
-  state.selected = data.enquiry;
+  state.selected =
+    data.enquiry;
 
+
+  /*
+   * Render the complete enquiry
+   */
   renderDetail(data);
 
+
+  /*
+   * Start automatic conversation
+   * checking every 5 seconds.
+   */
+  startConversationPolling(id);
+
+
+  /*
+   * Refresh enquiry list
+   */
   await loadEnquiries();
+}
+
+
+/* =========================================================
+   AUTOMATIC CONVERSATION POLLING
+========================================================= */
+
+function startConversationPolling(enquiryId) {
+
+  /*
+   * Stop previous polling first.
+   *
+   * This prevents multiple timers running
+   * when the admin changes enquiries.
+   */
+
+  if (state.conversationTimer) {
+
+    clearInterval(
+      state.conversationTimer
+    );
+
+    state.conversationTimer = null;
+  }
+
+
+  /*
+   * Check every 5 seconds.
+   */
+
+  state.conversationTimer =
+    setInterval(async () => {
+
+      /*
+       * Make sure the same enquiry
+       * is still selected.
+       */
+
+      if (
+        !state.selected ||
+        String(state.selected.id) !==
+          String(enquiryId)
+      ) {
+        return;
+      }
+
+
+      try {
+
+        const response =
+          await authFetch(
+            `/api/enquiries/${enquiryId}`
+          );
+
+
+        if (!response.ok) {
+          return;
+        }
+
+
+        const data =
+          await response.json();
+
+
+        /*
+         * Update selected enquiry
+         */
+
+        state.selected =
+          data.enquiry;
+
+
+        /*
+         * Only update the conversation.
+         *
+         * We intentionally DO NOT call
+         * renderDetail() here.
+         *
+         * This prevents the reply textarea
+         * from being destroyed while the admin
+         * is typing.
+         */
+
+        renderConversation(
+          data.messages
+        );
+
+
+      } catch (error) {
+
+        console.error(
+          "Conversation refresh failed:",
+          error
+        );
+
+      }
+
+    }, 5000);
+}
+
+
+/* =========================================================
+   RENDER CONVERSATION
+========================================================= */
+
+function renderConversation(messages) {
+
+  const conversation =
+    document.getElementById(
+      "conversation"
+    );
+
+
+  if (!conversation) {
+    return;
+  }
+
+
+  conversation.innerHTML =
+
+    messages.length
+
+      ? messages
+
+          .map(m => `
+
+            <article
+              class="message ${
+                m.direction === "OUTBOUND"
+                  ? "outbound"
+                  : "inbound"
+              }"
+            >
+
+              <div class="message-meta">
+
+                <strong>
+
+                  ${
+                    m.direction === "OUTBOUND"
+
+                      ? "Stoneage Interiors"
+
+                      : escapeHtml(
+                          m.from_email ||
+                          "Customer"
+                        )
+
+                  }
+
+                </strong>
+
+
+                <span>
+                  ${formatDate(
+                    m.created_at
+                  )}
+                </span>
+
+              </div>
+
+
+              ${
+                m.subject
+
+                  ? `
+                    <div class="message-subject">
+                      ${escapeHtml(
+                        m.subject
+                      )}
+                    </div>
+                  `
+
+                  : ""
+              }
+
+
+              <div class="message-body">
+                ${escapeHtml(
+                  m.body
+                )}
+              </div>
+
+            </article>
+
+          `)
+
+          .join("")
+
+      : `
+        <p class="muted">
+          No messages yet.
+        </p>
+      `;
 }
 
 
@@ -244,117 +529,318 @@ async function loadEnquiry(id) {
 ========================================================= */
 
 function renderDetail(data) {
-  const e = data.enquiry;
 
-  document.getElementById("detail").innerHTML = `
+  const e =
+    data.enquiry;
+
+
+  document.getElementById(
+    "detail"
+  ).innerHTML = `
+
     <div class="detail-header">
+
       <div>
-        <div class="eyebrow">${escapeHtml(e.reference)}</div>
-        <h2>${escapeHtml(e.name)}</h2>
-        <div class="muted">${escapeHtml(e.company || "")}</div>
+
+        <div class="eyebrow">
+          ${escapeHtml(
+            e.reference
+          )}
+        </div>
+
+
+        <h2>
+          ${escapeHtml(
+            e.name
+          )}
+        </h2>
+
+
+        <div class="muted">
+          ${escapeHtml(
+            e.company || ""
+          )}
+        </div>
+
       </div>
+
 
       <select id="detailStatus">
-        ${["NEW", "CONTACTED", "QUOTATION_SENT", "FOLLOW_UP", "WON", "LOST"]
-          .map(status =>
-            `<option value="${status}" ${e.status === status ? "selected" : ""}>
-              ${escapeHtml(statusLabel(status))}
-            </option>`
-          )
-          .join("")}
+
+        ${
+          [
+            "NEW",
+            "CONTACTED",
+            "QUOTATION_SENT",
+            "FOLLOW_UP",
+            "WON",
+            "LOST"
+          ]
+
+          .map(status => `
+
+            <option
+              value="${status}"
+              ${
+                e.status === status
+                  ? "selected"
+                  : ""
+              }
+            >
+              ${escapeHtml(
+                statusLabel(status)
+              )}
+            </option>
+
+          `)
+
+          .join("")
+        }
+
       </select>
+
     </div>
+
 
     <div class="grid">
+
       <div>
-        <label>Email</label>
-        <a href="mailto:${escapeHtml(e.email)}">
-          ${escapeHtml(e.email)}
+
+        <label>
+          Email
+        </label>
+
+        <a
+          href="mailto:${escapeHtml(
+            e.email
+          )}"
+        >
+          ${escapeHtml(
+            e.email
+          )}
         </a>
+
       </div>
 
-      <div>
-        <label>Phone</label>
-        <span>${escapeHtml(e.phone || "—")}</span>
-      </div>
 
       <div>
-        <label>Country</label>
-        <span>${escapeHtml(e.country || "—")}</span>
+
+        <label>
+          Phone
+        </label>
+
+        <span>
+          ${escapeHtml(
+            e.phone || "—"
+          )}
+        </span>
+
       </div>
 
-      <div>
-        <label>Profession</label>
-        <span>${escapeHtml(e.profession || "—")}</span>
-      </div>
 
       <div>
-        <label>Found us via</label>
-        <span>${escapeHtml(e.how_discovered || "—")}</span>
+
+        <label>
+          Country
+        </label>
+
+        <span>
+          ${escapeHtml(
+            e.country || "—"
+          )}
+        </span>
+
       </div>
 
+
       <div>
-        <label>Assigned to</label>
-        <span>${escapeHtml(e.assigned_to || "Unassigned")}</span>
+
+        <label>
+          Profession
+        </label>
+
+        <span>
+          ${escapeHtml(
+            e.profession || "—"
+          )}
+        </span>
+
       </div>
+
+
+      <div>
+
+        <label>
+          Found us via
+        </label>
+
+        <span>
+          ${escapeHtml(
+            e.how_discovered ||
+            "—"
+          )}
+        </span>
+
+      </div>
+
+
+      <div>
+
+        <label>
+          Assigned to
+        </label>
+
+        <span>
+          ${escapeHtml(
+            e.assigned_to ||
+            "Unassigned"
+          )}
+        </span>
+
+      </div>
+
     </div>
 
-    <section class="panel">
-      <h3>Interested in</h3>
-      <p>${escapeHtml(e.interested_in || "General enquiry")}</p>
-    </section>
 
     <section class="panel">
-      <h3>Project requirements</h3>
-      <p class="pre">
-        ${escapeHtml(e.project_details || "No project details supplied.")}
+
+      <h3>
+        Interested in
+      </h3>
+
+      <p>
+        ${escapeHtml(
+          e.interested_in ||
+          "General enquiry"
+        )}
       </p>
+
     </section>
 
+
     <section class="panel">
-      <h3>Conversation</h3>
+
+      <h3>
+        Project requirements
+      </h3>
+
+      <p class="pre">
+        ${escapeHtml(
+          e.project_details ||
+          "No project details supplied."
+        )}
+      </p>
+
+    </section>
+
+
+    <section class="panel">
+
+      <h3>
+        Conversation
+      </h3>
+
 
       <div id="conversation">
+
         ${
           data.messages.length
-            ? data.messages.map(m => `
-              <article class="message ${m.direction === "OUTBOUND" ? "outbound" : "inbound"}">
-                <div class="message-meta">
-                  <strong>
-                    ${
+
+            ? data.messages
+
+                .map(m => `
+
+                  <article
+                    class="message ${
                       m.direction === "OUTBOUND"
-                        ? "Stoneage Interiors"
-                        : escapeHtml(m.from_email || "Customer")
+                        ? "outbound"
+                        : "inbound"
+                    }"
+                  >
+
+                    <div
+                      class="message-meta"
+                    >
+
+                      <strong>
+
+                        ${
+                          m.direction ===
+                          "OUTBOUND"
+
+                            ? "Stoneage Interiors"
+
+                            : escapeHtml(
+                                m.from_email ||
+                                "Customer"
+                              )
+                        }
+
+                      </strong>
+
+
+                      <span>
+                        ${formatDate(
+                          m.created_at
+                        )}
+                      </span>
+
+                    </div>
+
+
+                    ${
+                      m.subject
+
+                        ? `
+                          <div
+                            class="message-subject"
+                          >
+                            ${escapeHtml(
+                              m.subject
+                            )}
+                          </div>
+                        `
+
+                        : ""
                     }
-                  </strong>
 
-                  <span>${formatDate(m.created_at)}</span>
-                </div>
 
-                ${
-                  m.subject
-                    ? `<div class="message-subject">
-                        ${escapeHtml(m.subject)}
-                       </div>`
-                    : ""
-                }
+                    <div
+                      class="message-body"
+                    >
+                      ${escapeHtml(
+                        m.body
+                      )}
+                    </div>
 
-                <div class="message-body">
-                  ${escapeHtml(m.body)}
-                </div>
-              </article>
-            `).join("")
-            : `<p class="muted">No messages yet.</p>`
+                  </article>
+
+                `)
+
+                .join("")
+
+            : `
+              <p class="muted">
+                No messages yet.
+              </p>
+            `
         }
+
       </div>
+
+
+      <!-- REPLY BOX -->
 
       <div class="reply-box">
 
         <textarea
           id="replyBody"
-          placeholder="Write your reply to ${escapeHtml(e.name)}..."
+          placeholder="Write your reply to ${escapeHtml(
+            e.name
+          )}..."
           rows="7"
         ></textarea>
+
 
         <button
           type="button"
@@ -364,196 +850,367 @@ function renderDetail(data) {
           Send Reply
         </button>
 
-        <div id="replyStatus"></div>
+
+        <div
+          id="replyStatus"
+        ></div>
 
       </div>
+
     </section>
 
+
+    <!-- INTERNAL NOTES -->
+
     <section class="panel">
-      <h3>Internal notes</h3>
+
+      <h3>
+        Internal notes
+      </h3>
+
 
       ${
         data.notes.length
-          ? data.notes.map(n => `
-              <article class="note">
-                <div>
-                  <strong>${escapeHtml(n.author || "Admin")}</strong>
-                  ·
-                  ${formatDate(n.created_at)}
-                </div>
 
-                <p>${escapeHtml(n.body)}</p>
-              </article>
-            `).join("")
-          : `<p class="muted">No internal notes yet.</p>`
+          ? data.notes
+
+              .map(n => `
+
+                <article class="note">
+
+                  <div>
+
+                    <strong>
+                      ${escapeHtml(
+                        n.author ||
+                        "Admin"
+                      )}
+                    </strong>
+
+                    ·
+
+                    ${formatDate(
+                      n.created_at
+                    )}
+
+                  </div>
+
+
+                  <p>
+                    ${escapeHtml(
+                      n.body
+                    )}
+                  </p>
+
+                </article>
+
+              `)
+
+              .join("")
+
+          : `
+            <p class="muted">
+              No internal notes yet.
+            </p>
+          `
       }
 
+
       <div class="note-box">
-        <input id="noteAuthor" placeholder="Your name">
+
+        <input
+          id="noteAuthor"
+          placeholder="Your name"
+        >
+
 
         <textarea
           id="noteBody"
           placeholder="Add an internal note..."
         ></textarea>
 
-        <button id="saveNote">
+
+        <button
+          id="saveNote"
+          type="button"
+        >
           Add Note
         </button>
+
       </div>
+
     </section>
+
   `;
 
 
-  /*
-   * STATUS CHANGE
-   */
+  /* =======================================================
+     STATUS CHANGE
+  ======================================================= */
+
   document
-    .getElementById("detailStatus")
-    .addEventListener("change", async (event) => {
+    .getElementById(
+      "detailStatus"
+    )
+    .addEventListener(
+      "change",
+      async (event) => {
 
-      const response = await authFetch(
-        `/api/enquiries/${e.id}/status`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: event.target.value
-          })
+        const response =
+          await authFetch(
+            `/api/enquiries/${e.id}/status`,
+            {
+              method: "PATCH",
+
+              body: JSON.stringify({
+                status:
+                  event.target.value
+              })
+            }
+          );
+
+
+        if (!response.ok) {
+
+          const result =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
+
+
+          alert(
+            result.error ||
+            "Unable to update status."
+          );
+
+          return;
         }
-      );
 
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
 
-        alert(
-          result.error ||
-          "Unable to update status."
+        await loadStats();
+
+        await loadEnquiries();
+
+      }
+    );
+
+
+  /* =======================================================
+     SEND REPLY
+  ======================================================= */
+
+  document
+    .getElementById(
+      "sendReply"
+    )
+    .addEventListener(
+      "click",
+      async () => {
+
+        const textarea =
+          document.getElementById(
+            "replyBody"
+          );
+
+
+        const status =
+          document.getElementById(
+            "replyStatus"
+          );
+
+
+        const button =
+          document.getElementById(
+            "sendReply"
+          );
+
+
+        const body =
+          textarea.value.trim();
+
+
+        if (!body) {
+
+          status.textContent =
+            "Please write a reply first.";
+
+          return;
+        }
+
+
+        button.disabled = true;
+
+        button.textContent =
+          "Sending...";
+
+        status.textContent = "";
+
+
+        try {
+
+          const response =
+            await authFetch(
+              `/api/enquiries/${e.id}/reply`,
+              {
+                method: "POST",
+
+                body: JSON.stringify({
+                  body
+                })
+              }
+            );
+
+
+          const result =
+            await response.json();
+
+
+          if (!response.ok) {
+
+            throw new Error(
+              result.error ||
+              "Unable to send reply."
+            );
+
+          }
+
+
+          status.textContent =
+            "Reply sent successfully.";
+
+
+          textarea.value = "";
+
+
+          /*
+           * Reload enquiry.
+           *
+           * This makes the new OUTBOUND
+           * message appear immediately.
+           */
+
+          await loadEnquiry(
+            e.id
+          );
+
+
+          /*
+           * Refresh stats.
+           */
+
+          await loadStats();
+
+
+        } catch (error) {
+
+          console.error(
+            "Reply error:",
+            error
+          );
+
+
+          /*
+           * The textarea may still exist
+           * unless loadEnquiry() was successful.
+           */
+
+          const currentStatus =
+            document.getElementById(
+              "replyStatus"
+            );
+
+
+          if (currentStatus) {
+
+            currentStatus.textContent =
+              error.message ||
+              "Unable to send reply.";
+
+          }
+
+        }
+
+      }
+    );
+
+
+  /* =======================================================
+     ADD INTERNAL NOTE
+  ======================================================= */
+
+  document
+    .getElementById(
+      "saveNote"
+    )
+    .addEventListener(
+      "click",
+      async () => {
+
+        const body =
+          document
+            .getElementById(
+              "noteBody"
+            )
+            .value
+            .trim();
+
+
+        const author =
+          document
+            .getElementById(
+              "noteAuthor"
+            )
+            .value
+            .trim() ||
+          "Admin";
+
+
+        if (!body) {
+          return;
+        }
+
+
+        const response =
+          await authFetch(
+            `/api/enquiries/${e.id}/notes`,
+            {
+              method: "POST",
+
+              body: JSON.stringify({
+                body,
+                author
+              })
+            }
+          );
+
+
+        if (!response.ok) {
+
+          const result =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
+
+
+          alert(
+            result.error ||
+            "Unable to save note."
+          );
+
+          return;
+        }
+
+
+        await loadEnquiry(
+          e.id
         );
 
-        return;
       }
-
-      await loadStats();
-      await loadEnquiries();
-    });
-
-
-  /*
-   * SEND REPLY
-   */
-  document.getElementById("sendReply").addEventListener("click", async () => {
-  const textarea = document.getElementById("replyBody");
-  const status = document.getElementById("replyStatus");
-  const button = document.getElementById("sendReply");
-
-  const body = textarea.value.trim();
-
-  if (!body) {
-    status.textContent = "Please write a reply first.";
-    return;
-  }
-
-  button.disabled = true;
-  button.textContent = "Sending...";
-  status.textContent = "";
-
-  try {
-    const response = await authFetch(`/api/enquiries/${e.id}/reply`, {
-      method: "POST",
-      body: JSON.stringify({
-        body
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        result.error || "Unable to send reply."
-      );
-    }
-
-    status.textContent = "Reply sent successfully.";
-
-    textarea.value = "";
-
-    /*
-     * Reload the enquiry so the new
-     * OUTBOUND message appears in conversation
-     */
-    await loadEnquiry(e.id);
-
-    /*
-     * Refresh stats because NEW may
-     * have changed to CONTACTED
-     */
-    await loadStats();
-
-  } catch (error) {
-
-    console.error("Reply error:", error);
-
-    status.textContent =
-      error.message || "Unable to send reply.";
-
-  } finally {
-
-    /*
-     * loadEnquiry() rebuilds the HTML,
-     * so this element may no longer exist.
-     *
-     * Therefore we don't rely on it here.
-     */
-  }
-});
-
-  /*
-   * ADD INTERNAL NOTE
-   */
-  document
-    .getElementById("saveNote")
-    .addEventListener("click", async () => {
-
-      const body =
-        document.getElementById("noteBody").value.trim();
-
-      const author =
-        document.getElementById("noteAuthor").value.trim() ||
-        "Admin";
-
-
-      if (!body) {
-        return;
-      }
-
-
-      const response = await authFetch(
-        `/api/enquiries/${e.id}/notes`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            body,
-            author
-          })
-        }
-      );
-
-
-      if (!response.ok) {
-
-        const result =
-          await response.json().catch(() => ({}));
-
-        alert(
-          result.error ||
-          "Unable to save note."
-        );
-
-        return;
-      }
-
-
-      await loadEnquiry(e.id);
-    });
+    );
 }
 
 
@@ -575,7 +1232,9 @@ async function refreshAll() {
 ========================================================= */
 
 document
-  .getElementById("refresh")
+  .getElementById(
+    "refresh"
+  )
   .addEventListener(
     "click",
     refreshAll
@@ -586,12 +1245,17 @@ let searchTimer;
 
 
 document
-  .getElementById("search")
+  .getElementById(
+    "search"
+  )
   .addEventListener(
     "input",
     () => {
 
-      clearTimeout(searchTimer);
+      clearTimeout(
+        searchTimer
+      );
+
 
       searchTimer =
         setTimeout(
@@ -604,7 +1268,9 @@ document
 
 
 document
-  .getElementById("statusFilter")
+  .getElementById(
+    "statusFilter"
+  )
   .addEventListener(
     "change",
     loadEnquiries
@@ -615,25 +1281,26 @@ document
    INITIAL LOAD
 ========================================================= */
 
-refreshAll().catch(error => {
+refreshAll()
+  .catch(error => {
 
-  console.error(
-    "Admin application failed:",
-    error
-  );
+    console.error(
+      "Admin application failed:",
+      error
+    );
 
 
-  document.getElementById(
-    "detail"
-  ).innerHTML = `
+    document.getElementById(
+      "detail"
+    ).innerHTML = `
 
-    <div class="empty">
+      <div class="empty">
 
-      Unable to connect
-      to the enquiry API.
+        Unable to connect
+        to the enquiry API.
 
-    </div>
+      </div>
 
-  `;
+    `;
 
-});
+  });
