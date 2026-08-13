@@ -271,3 +271,46 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; }
   .grid { grid-template-columns: 1fr; }
   .toolbar { flex-direction: column; }
 }
+
+.message-attachments {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #ddd;
+}
+
+.attachment-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #f7f5f0;
+  border: 1px solid #ddd6ca;
+  border-radius: 4px;
+  max-width: 360px;
+}
+
+.attachment-icon {
+  font-size: 18px;
+}
+
+.attachment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-info strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.attachment-info span {
+  font-size: 11px;
+  color: #777;
+}

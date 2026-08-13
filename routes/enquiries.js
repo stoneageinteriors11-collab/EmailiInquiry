@@ -271,44 +271,49 @@ router.post(
        * ---------------------------------------------------------
        */
 
-      const messageResult = await pool.query(
-        `
-        INSERT INTO messages
-        (
-          enquiry_id,
-          direction,
-          from_email,
-          to_email,
-          subject,
-          body,
-          provider_message_id
-        )
-        VALUES
-        (
-          $1,
-          'OUTBOUND',
-          $2,
-          $3,
-          $4,
-          $5,
-          $6
-        )
-        RETURNING *
-        `,
-        [
-          enquiry.id,
+     const attachments = (req.files || []).map(file => ({
+  filename: file.originalname,
+  size: file.size,
+  mimetype: file.mimetype
+}));
 
-          process.env.EMAIL_FROM,
 
-          enquiry.email,
-
-          subject,
-
-          body,
-
-          emailResult?.id || null
-        ]
-      );
+const messageResult = await pool.query(
+  `
+  INSERT INTO messages
+  (
+    enquiry_id,
+    direction,
+    from_email,
+    to_email,
+    subject,
+    body,
+    provider_message_id,
+    attachments
+  )
+  VALUES
+  (
+    $1,
+    'OUTBOUND',
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7
+  )
+  RETURNING *
+  `,
+  [
+    enquiry.id,
+    process.env.EMAIL_FROM,
+    enquiry.email,
+    subject,
+    body,
+    emailResult?.id || null,
+    JSON.stringify(attachments)
+  ]
+);
 
 
       /*

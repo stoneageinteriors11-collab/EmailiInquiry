@@ -505,10 +505,36 @@ function renderConversation(messages) {
 
 
               <div class="message-body">
-                ${escapeHtml(
-                  m.body
-                )}
-              </div>
+  ${escapeHtml(m.body)}
+</div>
+
+${
+  Array.isArray(m.attachments) && m.attachments.length
+    ? `
+      <div class="message-attachments">
+        <div class="attachment-title">
+          📎 Attachment${m.attachments.length > 1 ? "s" : ""}
+        </div>
+
+        ${m.attachments.map(file => `
+          <div class="attachment-item">
+            <span class="attachment-icon">📄</span>
+
+            <div class="attachment-info">
+              <strong>
+                ${escapeHtml(file.filename)}
+              </strong>
+
+              <span>
+                ${formatFileSize(file.size)}
+              </span>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `
+    : ""
+}
 
             </article>
 
@@ -523,7 +549,21 @@ function renderConversation(messages) {
       `;
 }
 
+function formatFileSize(bytes) {
+  if (!bytes || bytes <= 0) {
+    return "";
+  }
 
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 /* =========================================================
    RENDER DETAIL
 ========================================================= */
