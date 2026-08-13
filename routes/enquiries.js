@@ -188,145 +188,201 @@ router.post(
   "/:id/reply",
   upload.array("attachments", 5),
   async (req, res) => {
-  const body = String(req.body.body || "").trim();
 
-  if (!body) {
-    return res.status(400).json({
-      error: "Reply cannot be empty."
-    });
-  }
+    const body = String(req.body.body || "").trim();
 
-  try {
-    /*
-     * Load enquiry
-     */
-    const enquiryResult = await pool.query(
-      `
-      SELECT *
-      FROM enquiries
-      WHERE id = $1
-      `,
-      [req.params.id]
-    );
-
-    if (!enquiryResult.rowCount) {
-      return res.status(404).json({
-        error: "Enquiry not found."
-      });
-    }
-
-    const enquiry = enquiryResult.rows[0];
-
-    /*
-     * Customer email
-     */
-    if (!enquiry.email) {
+    if (!body) {
       return res.status(400).json({
-        error: "Customer email address is missing."
+        error: "Reply cannot be empty."
       });
     }
 
-    /*
-     * Subject
-     */
-    const subject =
-      `Re: Your enquiry ${enquiry.reference}`;
+    try {
 
-    /*
-     * Send email
-     */
- await sendEnquiryReply({
-  to: enquiry.email,
-  subject,
-  body,
-  enquiryReference: enquiry.reference,
-  attachments: req.files || []
-});
+      /*
+       * ---------------------------------------------------------
+       * Load enquiry
+       * ---------------------------------------------------------
+       */
 
-    /*
-     * Store outbound message
-     */
-    const messageResult = await pool.query(
-      `
-      INSERT INTO messages
-      (
-        enquiry_id,
-        direction,
-        from_email,
-        to_email,
-        subject,
-        body,
-        provider_message_id
-      )
-      VALUES
-      (
-        $1,
-        'OUTBOUND',
-        $2,
-        $3,
-        $4,
-        $5,
-        $6
-      )
-      RETURNING *
-      `,
-      [
-        enquiry.id,
-        process.env.EMAIL_FROM,
-        enquiry.email,
-        subject,
-        body,
-        emailResult?.id || null
-      ]
-    );
-
-    /*
-     * Automatically move NEW enquiry to CONTACTED
-     */
-    if (enquiry.status === "NEW") {
-      await pool.query(
+      const enquiryResult = await pool.query(
         `
-        UPDATE enquiries
-        SET
-          status = 'CONTACTED',
-          updated_at = NOW()
+        SELECT *
+        FROM enquiries
         WHERE id = $1
         `,
-        [enquiry.id]
+        [req.params.id]
       );
-    } else {
-      await pool.query(
+
+      if (!enquiryResult.rowCount) {
+        return res.status(404).json({
+          error: "Enquiry not found."
+        });
+      }
+
+      const enquiry = enquiryResult.rows[0];
+
+
+      /*
+       * ---------------------------------------------------------
+       * Customer email
+       * ---------------------------------------------------------
+       */
+
+      if (!enquiry.email) {
+        return res.status(400).json({
+          error: "Customer email address is missing."
+        });
+      }
+
+
+      /*
+       * ---------------------------------------------------------
+       * Subject
+       * ---------------------------------------------------------
+       */
+
+      const subject =
+        `Re: Your enquiry ${enquiry.reference}`;
+
+
+      /*
+       * ---------------------------------------------------------
+       * Send email
+       *
+       * IMPORTANT:
+       * Save the returned Resend result into emailResult.
+       * This fixes the current ReferenceError.
+       * ---------------------------------------------------------
+       */
+
+      const emailResult = await sendEnquiryReply({
+        to: enquiry.email,
+        subject,
+        body,
+        enquiryReference: enquiry.reference,
+        attachments: req.files || []
+      });
+
+
+      /*
+       * ---------------------------------------------------------
+       * Store outbound message
+       * ---------------------------------------------------------
+       */
+
+      const messageResult = await pool.query(
         `
-        UPDATE enquiries
-        SET updated_at = NOW()
-        WHERE id = $1
+        INSERT INTO messages
+        (
+          enquiry_id,
+          direction,
+          from_email,
+          to_email,
+          subject,
+          body,
+          provider_message_id
+        )
+        VALUES
+        (
+          $1,
+          'OUTBOUND',
+          $2,
+          $3,
+          $4,
+          $5,
+          $6
+        )
+        RETURNING *
         `,
-        [enquiry.id]
+        [
+          enquiry.id,
+
+          process.env.EMAIL_FROM,
+
+          enquiry.email,
+
+          subject,
+
+          body,
+
+          emailResult?.id || null
+        ]
       );
+
+
+      /*
+       * ---------------------------------------------------------
+       * Update enquiry status
+       * ---------------------------------------------------------
+       */
+
+      if (enquiry.status === "NEW") {
+
+        await pool.query(
+          `
+          UPDATE enquiries
+          SET
+            status = 'CONTACTED',
+            updated_at = NOW()
+          WHERE id = $1
+          `,
+          [enquiry.id]
+        );
+
+      } else {
+
+        await pool.query(
+          `
+          UPDATE enquiries
+          SET
+            updated_at = NOW()
+          WHERE id = $1
+          `,
+          [enquiry.id]
+        );
+
+      }
+
+
+      /*
+       * ---------------------------------------------------------
+       * Success
+       * ---------------------------------------------------------
+       */
+
+      console.log("=================================");
+      console.log("REPLY SENT SUCCESSFULLY");
+      console.log("=================================");
+      console.log("Enquiry:", enquiry.reference);
+      console.log("Customer:", enquiry.email);
+      console.log("Resend ID:", emailResult?.id);
+      console.log("Attachments:", req.files?.length || 0);
+      console.log("=================================");
+
+
+      return res.status(201).json({
+        success: true,
+        message: messageResult.rows[0]
+      });
+
+
+    } catch (error) {
+
+      console.error("=================================");
+      console.error("REPLY FAILED");
+      console.error("=================================");
+      console.error(error);
+      console.error("Message:", error.message);
+      console.error("Stack:", error.stack);
+      console.error("=================================");
+
+      return res.status(500).json({
+        error: error.message || "Unable to send reply."
+      });
+
     }
-
-    /*
-     * Success
-     */
-    return res.status(201).json({
-      success: true,
-      message: messageResult.rows[0]
-    });
-
-  } catch (error) {
-
-    console.error("=================================");
-    console.error("REPLY FAILED");
-    console.error("=================================");
-    console.error(error);
-    console.error("Message:", error.message);
-    console.error("Stack:", error.stack);
-    console.error("=================================");
-
-    return res.status(500).json({
-      error: "Unable to send reply."
-    });
   }
-});
+);
 
 module.exports = router;
